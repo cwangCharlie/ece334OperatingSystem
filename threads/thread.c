@@ -3,7 +3,6 @@
 #include <ucontext.h>
 #include "thread.h"
 #include "interrupt.h"
-#include "sorted_points.h"
 #include <stdbool.h>
 
 void
