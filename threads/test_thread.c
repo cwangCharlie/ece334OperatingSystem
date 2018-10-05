@@ -10,6 +10,8 @@
 #define NTHREADS       128
 #define LOOPS	        10
 
+
+
 static void grand_finale();
 static void hello(char *msg);
 static int fact(int n);
@@ -69,7 +71,7 @@ test_basic()
 	assert(thread_ret_ok(ret));
 	ret2 = thread_yield(ret);
 	assert(ret2 == ret);
-
+	
 	/* store address of some variable on stack */
 	stack_array[thread_id()] = (long *)&ret;
 
