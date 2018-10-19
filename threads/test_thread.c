@@ -10,8 +10,6 @@
 #define NTHREADS       128
 #define LOOPS	        10
 
-
-
 static void grand_finale();
 static void hello(char *msg);
 static int fact(int n);
@@ -71,7 +69,7 @@ test_basic()
 	assert(thread_ret_ok(ret));
 	ret2 = thread_yield(ret);
 	assert(ret2 == ret);
-	
+
 	/* store address of some variable on stack */
 	stack_array[thread_id()] = (long *)&ret;
 
@@ -509,11 +507,19 @@ out:
 	/* we expect nr_sleeping is 0 at this point */
 	assert(nr_sleeping == 0);
 	assert(interrupts_enabled());
+
+	/* no thread should be waiting on queue */
 	wait_queue_destroy(queue);
-	unintr_printf("wakeup test done\n");
+
+	/* wait for other threads to exit */
+	while (thread_yield(THREAD_ANY) != THREAD_NONE) {
+	}
+	
 	struct mallinfo minfo_end = mallinfo();
 	assert(minfo_end.uordblks == minfo_start.uordblks);
 	assert(minfo_end.hblks == minfo_start.hblks);
+
+	unintr_printf("wakeup test done\n");
 }
 
 static Tid wait[NTHREADS];
@@ -521,7 +527,6 @@ static Tid wait[NTHREADS];
 static void
 test_wait_thread(int num)
 {
-	int ret;
 	int rand = ((double)random())/RAND_MAX * 1000000;
 
 	/* make sure that all threads are created before continuing */
@@ -534,10 +539,8 @@ test_wait_thread(int num)
 	if (num > 0) {
 		assert(interrupts_enabled());
 		/* wait on previous thread */
-		ret = thread_wait(wait[num-1]);
-		assert(ret == wait[num-1]);
+		thread_wait(wait[num-1]);
 		assert(interrupts_enabled());
-		assert(ret == num || ret == THREAD_INVALID);
 		spin(rand/10);
 		/* id should print in ascending order, from 1-127 */
 		unintr_printf("id = %d\n", num);
@@ -579,10 +582,12 @@ test_wait(void)
 	for (i = 0; i < NTHREADS; i++) {
 		thread_wait(wait[i]);
 	}
-	unintr_printf("wait test done\n");
+
 	struct mallinfo minfo_end = mallinfo();
 	assert(minfo_end.uordblks == minfo_start.uordblks);
 	assert(minfo_end.hblks == minfo_start.hblks);
+
+	unintr_printf("wait test done\n");
 }
 
 static void
@@ -650,7 +655,7 @@ test_lock_thread(unsigned long num)
 			assert(thread_ret_ok(ret) || ret == THREAD_NONE);
 
 			testval3 = num % 3;
-			
+			//printf("%lf\n,",testval1)
 			assert(testval2 == testval1 * testval1);
 			assert(testval2 % 3 == (testval3 * testval3) % 3);
 			assert(testval3 == testval1 % 3);
@@ -691,10 +696,12 @@ test_lock()
 	assert(interrupts_enabled());
 	lock_destroy(testlock);
 	assert(interrupts_enabled());
-	unintr_printf("lock test done\n");
+
 	struct mallinfo minfo_end = mallinfo();
 	assert(minfo_end.uordblks == minfo_start.uordblks);
 	assert(minfo_end.hblks == minfo_start.hblks);
+
+	unintr_printf("lock test done\n");
 }
 
 static void
@@ -771,10 +778,12 @@ test_cv_signal()
 	}
 	assert(interrupts_enabled());
 	lock_destroy(testlock);
-	unintr_printf("cv signal test done\n");
+
 	struct mallinfo minfo_end = mallinfo();
 	assert(minfo_end.uordblks == minfo_start.uordblks);
 	assert(minfo_end.hblks == minfo_start.hblks);
+
+	unintr_printf("cv signal test done\n");
 }
 
 static void
@@ -848,8 +857,10 @@ test_cv_broadcast()
 	cv_destroy(testcv_broadcast);
 	lock_destroy(testlock);
 	assert(interrupts_enabled());
-	unintr_printf("cv broadcast test done\n");
+
 	struct mallinfo minfo_end = mallinfo();
 	assert(minfo_end.uordblks == minfo_start.uordblks);
 	assert(minfo_end.hblks == minfo_start.hblks);
+
+	unintr_printf("cv broadcast test done\n");
 }

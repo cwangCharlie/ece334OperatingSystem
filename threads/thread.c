@@ -5,24 +5,42 @@
 #include "interrupt.h"
 #include <stdbool.h>
 
+
+Tid currentThread;
+void fn2(void) {
+	int enabled = interrupts_set(0);
+	interrupts_set(enabled);
+}
+
 void
 thread_stub(void (*thread_main)(void *), void *arg)
 {
+	//int enabled = interrupts_set(0);
+	interrupts_on();
 	Tid ret;
 
 	thread_main(arg); // call thread_main() function with arg
 	ret = thread_exit();
 	// we should only get here if we are the last thread. 
 	assert(ret == THREAD_NONE);
+	//printf("%d\n",currentThread);
 	// all threads are done, so process should exit
 	exit(0);
 }
 
-
-
+int countw =0;
 /* This is the wait queue structure */
 struct wait_queue {
 	/* ... Fill this in Lab 3 ... */
+	struct wait_node* head;
+	struct wait_node* tail;
+
+};
+
+struct wait_node{
+	struct thread* node;
+	struct wait_node* prv;
+	struct wait_node* next;
 };
 
 /* This is the thread control block */
@@ -30,12 +48,12 @@ struct thread {
 	/* ... Fill this in ... */
 	Tid threadID;
   	ucontext_t threadInfo;
-  	//0 is suspended
+  	//0 is ready
   	//1 is running
   	//2 is exit
+	//3 is suspensed
+	struct wait_queue* wqt;
   	int status;
-  	//struct thread* next;
-  	//struct thread* prv;
 	Tid nextThreadID;
 	Tid preThreadID;
 	void *stack;
@@ -51,16 +69,15 @@ struct ready_node {
 };
 //initialize the array
 struct thread TotalList[THREAD_MAX_THREADS] = {0};
-Tid currentThread;
+
 struct ready_node *ReadyList;
 //struct thread* emptyList;
 struct ready_node *endOfReady;
 void deleteNode(struct ready_node *node);
 
 void pushbackRL(struct ready_node* pt);
-struct ready_node* buildNodeRL();
-int freed =0;
-int allocaed =0;
+struct ready_node* buildNodeRL(Tid Ids);
+
 void
 thread_init(void)
 {
@@ -74,9 +91,10 @@ thread_init(void)
 	first.threadID = 0;
 	first.status =1;// one is running
 	first.stack = NULL;
-	first.exist = 1;
-	first.preThreadID = -1;
-	first.nextThreadID = -1;
+	first.exist = true;
+	first.preThreadID = -3;
+	first.nextThreadID = -3;
+	first.wqt = NULL;
 	currentThread = first.threadID;
 	TotalList[0] = first;
 
@@ -95,8 +113,12 @@ unsigned long stack_top;
 Tid
 thread_create(void (*fn) (void *), void *parg)
 {
+	
 	//volatile int calledsetcontext = 0;
 	//ucontext_t dummy;
+	int enabled = interrupts_set(0);
+	fn2();
+	//interrupts_off();
 	struct thread* newThread;
 	
 	Tid ID = 1;
@@ -116,6 +138,7 @@ thread_create(void (*fn) (void *), void *parg)
 	
 	newThread->nextThreadID = -1;
 	newThread->preThreadID = -1;
+	newThread->wqt=NULL;
 	getcontext(&newThread->threadInfo);
 
 
@@ -139,7 +162,10 @@ thread_create(void (*fn) (void *), void *parg)
 	struct ready_node *newNode = malloc(sizeof(struct ready_node));
 	newNode->node = newThread;
 	newNode->next = NULL;
+	
 	pushbackRL(newNode);
+	
+	interrupts_set(enabled);
 
 	return newThread->threadID;
 }
@@ -148,8 +174,21 @@ Tid
 thread_yield(Tid want_tid)
 {
 
-	
+	int enabled = interrupts_set(0);
+	fn2();
+	//interrupts_off();
 	//Tid ret = want_tid;
+
+	//check if i am the last thread running and state is exit
+	/*if(ReadyList == NULL && TotalList[currentThread].wqt == NULL){
+		if(TotalList[currentThread].wqt->head ==NULL && TotalList[currentThread].exist == false && TotalList[currentThread].status != 1){
+			exit(0);
+		}
+
+	}*/
+
+
+
 	volatile int setcontext_called = 0;
 	//int err;_ok(ret)' 
 
@@ -164,6 +203,7 @@ thread_yield(Tid want_tid)
 			nextThread = ReadyList->node;
 		}else{
 			//invalide node
+			interrupts_set(enabled);
 			return THREAD_NONE;
 		}
 	}else if (want_tid == THREAD_SELF||want_tid == currentThread)
@@ -183,6 +223,7 @@ thread_yield(Tid want_tid)
 		if (iter == NULL)
 		{
 			//invalid
+			interrupts_set(enabled);
 			return THREAD_INVALID;
 		}else{
 			nextThread = iter->node;
@@ -191,17 +232,16 @@ thread_yield(Tid want_tid)
 	}
 
 	//freeing prev Thread's stack if the last thread is existed
-		Tid prevTID= TotalList[currentThread].preThreadID;
-		if(prevTID < 0){
-			
-		}else{
-			struct thread *prevThread = &TotalList[prevTID];
-			if(!prevThread->exist){	
-				free(prevThread->stack);
+
+		for(int i =0; i<=1024; i++){
+			if(TotalList[i].status == 2 && !TotalList[i].exist){
+				//take things out from the queue
+				free(TotalList[i].stack);
+				TotalList[i].stack = NULL;
+				
 			}
 		}
 		
-
 	//Before doing anything we should check if the next thread is killed or not
 
 
@@ -210,31 +250,37 @@ thread_yield(Tid want_tid)
 
 		//STORE THE CURRENT THREAD
 		
-		//put this in the ready queue
-		TotalList[currentThread].status = 0;
-		
-
 		int err = getcontext(&(TotalList[currentThread].threadInfo));
 		assert(!err);
 		//push the current thread onto Readylist
 		if (setcontext_called == 0)
 		{
+				//put this in the ready queue
+		if(TotalList[currentThread].status ==1){
+			TotalList[currentThread].status = 0;
 			if(TotalList[currentThread].exist){
-				TotalList[currentThread].nextThreadID = nextThread->threadID;
-				TotalList[nextThread->threadID].preThreadID = currentThread;
+
+				if(nextThread->threadID >=0)
+					TotalList[currentThread].nextThreadID = nextThread->threadID;
+				
+				if(currentThread >= 0)
+					TotalList[nextThread->threadID].preThreadID = currentThread;
+
 				if (ReadyList==NULL)
 				{
 					//first element
-					ReadyList = buildNodeRL();
+					ReadyList = buildNodeRL(currentThread);
 					endOfReady=ReadyList;
 				}else{
 					//add to the end of the ready list
-					struct ready_node *newReadyT = buildNodeRL();
+					struct ready_node *newReadyT = buildNodeRL(currentThread);
 					pushbackRL(newReadyT);
 				}
 			}
-	
+		}
+		
 			if(!nextThread->exist){
+				//if current thread is kill 
 				currentThread = nextThread->threadID;
 				thread_exit();
 
@@ -255,9 +301,7 @@ thread_yield(Tid want_tid)
 						//empty
 						endOfReady=ReadyList;
 					}
-					//printf("deleteyh %d, %d\n", temp->node->threadID, (int)temp->node->exist);
-					//printf("%d\n",currentThread);
-					//printf("f%d\n",freed++);
+					
 					free(temp);
 					//at this point the thread should be in the ready list
 
@@ -267,8 +311,7 @@ thread_yield(Tid want_tid)
 					struct ready_node *temp =  endOfReady;
 					endOfReady=endOfReady->prv;
 					endOfReady->next =NULL;
-					//printf("deleteyE %d\n", temp->node->threadID);
-					//printf("f%d\n",freed++);
+					
 					free(temp);
 
 					}else{
@@ -277,13 +320,12 @@ thread_yield(Tid want_tid)
 					struct ready_node *after = iter->next;
 					before->next = after;
 					after->prv = before;
-					//printf("deleteyM %d\n", iter->node->threadID);
-					//printf("f%d\n",freed++);
+					
 					free(iter);
 					}
 				}
 			}
-			
+			//interrupts_set(enabled);
 			//set the current thread to be the nextthread's ID
 			currentThread = nextThread->threadID; 
 
@@ -293,15 +335,17 @@ thread_yield(Tid want_tid)
 
 			//SET THE NEW THREAD
 			setcontext_called = 1;
+			//interrupts_set(enabled);
 			err = setcontext(&(nextThread->threadInfo));
 		}
-	
 		
+		interrupts_set(enabled);
 		return TotalList[currentThread].nextThreadID; 
 
 }
 
 void pushbackRL(struct ready_node* pt){
+
 	if(ReadyList ==NULL){
 		//FIRST ELEMENT
 		ReadyList = pt;
@@ -318,9 +362,9 @@ void pushbackRL(struct ready_node* pt){
 
 }
 
-struct ready_node* buildNodeRL(){
+struct ready_node* buildNodeRL(Tid Ids){
 	struct ready_node *newNode = malloc(sizeof(struct ready_node));
-	newNode->node = &TotalList[currentThread];
+	newNode->node = &TotalList[Ids];
 	newNode->prv = NULL;
 	newNode->next=NULL;
 	return newNode;
@@ -328,7 +372,6 @@ struct ready_node* buildNodeRL(){
 
 void deleteNode(struct ready_node *node){
 
-	
 		if (node->node->threadID == ReadyList->node->threadID)
 		{
 			//head of the node
@@ -364,23 +407,28 @@ void deleteNode(struct ready_node *node){
 
 		}
 
-	
 }
 Tid
 thread_exit()
 {
+	int enabled = interrupts_set(0);
+	fn2();
+	struct thread* destoryT = &TotalList[currentThread];
+	if(destoryT->wqt!=NULL){
+			thread_wakeup(destoryT->wqt,1);
+			free(destoryT->wqt);
+			destoryT->wqt =NULL;
+		}
 	if(ReadyList != NULL){
-		struct thread* destoryT = &TotalList[currentThread];
+		
+		//put everything in the ready queue on the list
+		
 		destoryT->exist= false;
 		destoryT->status = 2;
-		destoryT->threadID = -1;
-		//destoryT->threadInfo = {0};
-		if(destoryT->stack!=NULL){
-			free(destoryT->stack);
-			destoryT->stack =NULL;
-		}
+		//currentThread = ReadyList->node->threadID;
 		thread_yield(THREAD_ANY);
-	}	
+	}
+	interrupts_set(enabled);	
 	return THREAD_NONE;
 
 	//this should exit itself which means that all elements should be cleared in that thread;
@@ -393,26 +441,52 @@ Tid
 thread_kill(Tid tid)
 {
 	// GO through the ready list
-
+	int enabled = interrupts_set(0);
+	fn2();
 	struct ready_node *itr = ReadyList;
 	while(ReadyList != NULL){
 		if(itr->node->threadID == tid){
 			//found the thread that needs to be killed
 			itr->node->exist = false;
-			itr->node->status = 2;
+			//itr->node->status = 2;
 			break;
 		}
 		itr = itr->next;
 	}
+	//check to see if this thread is in the wait queue
 
-	if(itr ==NULL){
+
+
+
+	if(itr ==NULL && (TotalList[currentThread].wqt ==NULL || TotalList[currentThread].wqt->head==NULL)){
+		interrupts_set(enabled);
 		return THREAD_INVALID;
+	}else if(TotalList[currentThread].wqt != NULL){
+		//Kill the thread 
+		//find the thread in the wait queue
+		struct wait_node* iter = TotalList[currentThread].wqt->head;
+		while(iter!=NULL){
+			if(iter->node->threadID == tid){
+				iter->node->exist =false;
+				break;
+			}
+			iter = iter->next;
+		}
+		if(iter ==NULL){
+			interrupts_set(enabled);
+			return THREAD_INVALID;
+		}else{
+			//deleteNodewq(TotalList[currentThread].wqt,iter);
+			interrupts_set(enabled);
+			return tid;
+		}
 	}else{
 		Tid threadid = itr->node->threadID;
 		free(itr->node->stack);
 		itr->node->stack = NULL;
+		//interrupts_set(enabled);
 		deleteNode(itr);
-
+		interrupts_set(enabled);
 		return threadid;
 	}
 
@@ -424,6 +498,84 @@ thread_kill(Tid tid)
  *******************************************************************/
 
 /* make sure to fill the wait_queue structure defined above */
+
+
+void pushbackWQ(struct wait_queue* pt, struct wait_node* newNode){
+	if( pt->head ==NULL){
+		//FIRST ELEMENT
+		pt->head = newNode;
+		pt->head->prv = NULL;
+		pt->head->next = NULL;
+		pt->tail = pt->head;
+	}else{
+		
+		/*pt->tail->next = newNode;
+		newNode->prv = pt->tail;
+		pt->tail = pt->tail->next;
+		pt->tail->next=NULL;*/
+		struct wait_node* iter = pt->head;
+		for(; iter->next !=NULL; iter =iter->next){
+
+		}
+		iter->next = newNode;
+		newNode->prv = iter;
+		iter = iter->next;
+		iter->next=NULL;
+		pt->tail = iter;
+	}
+}
+
+struct wait_node* buildNodeWQ(Tid Ids){
+	struct wait_node *newNode = malloc(sizeof(struct wait_node));
+	newNode->node = &TotalList[Ids];
+	newNode->prv = NULL;
+	newNode->next=NULL;
+	return newNode;
+}
+
+Tid deleteNodewq(struct wait_queue *wq, struct wait_node *node){
+
+
+		Tid returnTid = 0;
+		struct wait_node* head = wq->head;
+		//struct wait_node* end = wq->tail;
+		if(head == NULL){
+			//shouldn't be empty
+			return -1;
+		}
+		if (node->node->threadID == wq->head->node->threadID)
+		{
+			//head of the node
+			struct wait_node *temp =  wq->head;
+			wq->head = wq->head->next;
+			if (wq->head!=NULL)
+			{
+				wq->head->prv =NULL;
+			}else{
+				//empty
+				wq->tail=wq->head;
+			}
+			returnTid = temp->node->threadID;
+			free(temp);
+			//at this point the thread should be in the ready list
+
+		}else{
+			//middle of the list
+
+			struct wait_node *before = node->prv;
+			struct wait_node *after = node->next;
+
+			before->next = after;
+			after->prv = before;
+			returnTid = node->node->threadID;
+			free(node);
+
+		}
+
+		return returnTid;
+
+}
+
 struct wait_queue *
 wait_queue_create()
 {
@@ -432,7 +584,8 @@ wait_queue_create()
 	wq = malloc(sizeof(struct wait_queue));
 	assert(wq);
 
-	TBD();
+	wq->head = NULL;
+	wq->tail = NULL;
 
 	return wq;
 }
@@ -440,15 +593,54 @@ wait_queue_create()
 void
 wait_queue_destroy(struct wait_queue *wq)
 {
-	TBD();
+	//TBD();
+	while(wq->head != NULL){
+		struct wait_node* temp = wq->head;
+		wq->head = wq->head->next;
+		free(temp);
+	}
 	free(wq);
 }
 
 Tid
 thread_sleep(struct wait_queue *queue)
 {
-	TBD();
-	return THREAD_FAILED;
+	//TBD();
+	int enabled = interrupts_set(0);
+	fn2();
+
+	volatile int donePush = 0;
+	if(queue == NULL){
+		interrupts_set(enabled);
+		return THREAD_INVALID;
+	}
+
+	if(ReadyList == NULL){
+		interrupts_set(enabled);
+		return THREAD_NONE;
+	}
+
+	struct thread* nextThread = ReadyList->node;
+	//suspend the caller thread put the calling thread in the wait queue
+	//find the current running thread with currentthread id
+	struct thread* blockedThread = &TotalList[currentThread];
+	blockedThread->status = 3; //set it as suspended
+
+	int err = getcontext(&blockedThread->threadInfo);
+	assert(!err);
+	//push on the queue
+	if(donePush ==0){
+	struct wait_node* newNode = buildNodeWQ(currentThread);
+	pushbackWQ(queue,newNode);
+	//nextThreadID = ReadyList->node->threadID;
+	deleteNode(ReadyList);
+	nextThread->status = 1;
+	donePush = 1;
+	currentThread = nextThread->threadID;
+	err = setcontext(&(nextThread->threadInfo));
+	}
+	interrupts_set(enabled);
+	return nextThread->threadID;
 }
 
 /* when the 'all' parameter is 1, wakeup all threads waiting in the queue.
@@ -456,63 +648,181 @@ thread_sleep(struct wait_queue *queue)
 int
 thread_wakeup(struct wait_queue *queue, int all)
 {
-	TBD();
-	return 0;
+	//TBD();
+	int enabled = interrupts_set(0);
+	fn2();
+	if(queue ==NULL){
+		interrupts_set(enabled);
+		return 0;
+	}else if(queue->head == NULL){
+		interrupts_set(enabled);
+		return 0;
+	}
+
+
+	int counter = 0;
+	if(all == 0){
+		//remove from the suspended q to ready Q
+		Tid wakeID = deleteNodewq(queue,queue->head);
+		//push this thread back on the Ready Q
+		if(wakeID == -1){
+			printf("shouldn't go here\n");
+		}else{
+			struct ready_node* newNode = buildNodeRL(wakeID);
+			newNode->node->status = 0;
+			pushbackRL(newNode);
+		}
+		interrupts_set(enabled);
+		return 1;
+	}else if(all == 1){
+
+		struct wait_node* node = queue->head;
+		while(queue-> head!=NULL){
+			Tid wakeID = deleteNodewq(queue,node);
+			struct ready_node* newNode = buildNodeRL(wakeID);
+			newNode->node->status = 0;
+			pushbackRL(newNode);
+			//node = node->next;
+			node = queue->head;
+			counter++;
+		}
+	
+	}
+	interrupts_set(enabled);
+		return counter;
+	
 }
 
 /* suspend current thread until Thread tid exits */
 Tid
 thread_wait(Tid tid)
 {
-	TBD();
-	return 0;
+	//TBD();
+	//put the thread on the wait queue of the the tid thread
+	//Thread invalid: alerts the caller that the identifier tid does not correspond to a valid thread
+	//or current thread
+	int enabled = interrupts_set(0);
+	fn2();
+	//check the status of each thread
+	if(tid <0 || tid == currentThread || tid >1024){
+		interrupts_set(enabled);
+		return THREAD_INVALID;
+	}else if(TotalList[tid].exist == false){
+		interrupts_set(enabled);
+		return THREAD_INVALID;
+	}
+	
+	//volatile Tid threadexited = currentThread;
+	//create the wait queue for the thread tid
+	struct thread* targetThread = &TotalList[tid];
+	if(targetThread->wqt == NULL){
+		targetThread->wqt = malloc(sizeof(struct wait_queue));
+		targetThread->wqt->head = NULL;
+		targetThread->wqt->tail =NULL;
+		//countw++;
+		//printf("%d\n",countw);
+	}
+	thread_sleep(targetThread->wqt);
+	
+
+	interrupts_set(enabled);
+	return tid;
 }
 
 struct lock {
 	/* ... Fill this in ... */
+	struct wait_queue* wqL;
+	bool avaliable;
+	Tid acquiredID;
 };
 
 struct lock *
 lock_create()
 {
+	int enabled = interrupts_set(0);
+	fn2();
 	struct lock *lock;
 
 	lock = malloc(sizeof(struct lock));
 	assert(lock);
 
-	TBD();
-
+	//TBD();
+	lock->avaliable = true;
+	lock->wqL = wait_queue_create();
+	lock->acquiredID = -1;
+	interrupts_set(enabled);
 	return lock;
 }
 
 void
 lock_destroy(struct lock *lock)
 {
+	int enabled = interrupts_set(0);
+	fn2();
 	assert(lock != NULL);
+	
+	//TBD();
 
-	TBD();
+	if(lock->avaliable){
+		free(lock->wqL);
+		free(lock);
+	}
 
-	free(lock);
+
+
+	interrupts_set(enabled);
 }
 
 void
 lock_acquire(struct lock *lock)
 {
-	assert(lock != NULL);
+	int enabled = interrupts_set(0);
+	fn2();
 
-	TBD();
+	assert(lock != NULL);
+	//lock->avaliable = false;
+
+	
+	while(lock->avaliable !=true){
+		thread_sleep(lock->wqL);
+			//printf("gg\n");
+		//thread_sleep(lock->wqL);
+	}	
+	lock->acquiredID =currentThread;
+	lock->avaliable = false;	
+	//printf("out\n");
+	//thread_sleep(lock->wqL);
+	
+	//put current thread on the wait queue 
+	interrupts_set(enabled);
+	
+	//TBD();
 }
 
 void
 lock_release(struct lock *lock)
 {
+
+	int enabled = interrupts_set(0);
+	fn2();
 	assert(lock != NULL);
 
-	TBD();
+	if(!lock->avaliable){
+		lock->avaliable = true;
+		
+		thread_wakeup(lock->wqL,1);
+
+	}
+	
+	//check if the lock had been acquired by calling thread
+	interrupts_set(enabled);
+	
+	//TBD();
 }
 
 struct cv {
 	/* ... Fill this in ... */
+	struct wait_queue* wqC;
 };
 
 struct cv *
@@ -523,7 +833,10 @@ cv_create()
 	cv = malloc(sizeof(struct cv));
 	assert(cv);
 
-	TBD();
+	cv->wqC = wait_queue_create();
+
+
+	//TBD();
 
 	return cv;
 }
@@ -533,7 +846,13 @@ cv_destroy(struct cv *cv)
 {
 	assert(cv != NULL);
 
-	TBD();
+	//TBD();
+	if(cv->wqC!=NULL){
+		if(cv->wqC->head==NULL)
+			free(cv->wqC);
+		else
+			printf("shouldn't come herre\n");
+	}
 
 	free(cv);
 }
@@ -541,26 +860,47 @@ cv_destroy(struct cv *cv)
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
+	int enabled = interrupts_set(0);
+	fn2();
 	assert(cv != NULL);
 	assert(lock != NULL);
 
-	TBD();
+	lock_release(lock);
+	//suspend the calling thread
+	if(lock->acquiredID == currentThread)
+		thread_sleep(cv->wqC);
+
+	lock_acquire(lock);
+
+	interrupts_set(enabled);
+	//TBD();
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
+	int enabled = interrupts_set(0);
+	fn2();
 	assert(cv != NULL);
 	assert(lock != NULL);
+	if(lock->acquiredID ==currentThread)
+		thread_wakeup(cv->wqC,0);
 
-	TBD();
+	interrupts_set(enabled);
+	//TBD();
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
+	int enabled = interrupts_set(0);
+	fn2();
 	assert(cv != NULL);
 	assert(lock != NULL);
 
-	TBD();
+	if(lock->acquiredID ==currentThread)
+		thread_wakeup(cv->wqC,1);
+
+	interrupts_set(enabled);
+	//TBD();
 }
