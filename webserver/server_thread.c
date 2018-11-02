@@ -216,7 +216,6 @@ server_request(struct server *sv, int connfd)
 			//printf("wtf\n");
 			pthread_mutex_lock(&lock);
 			while(request_counter == sv->max_requests){
-				
 				pthread_cond_wait(&full,&lock);
 				if(sv->exiting){
 					pthread_mutex_unlock(&lock);
@@ -249,18 +248,19 @@ server_exit(struct server *sv)
 	//wake up everything else in the wait queue
 	pthread_mutex_lock(&lock);
 	sv->exiting = 1;
+	//pthread_cond_broadcast(&full);
 	pthread_cond_broadcast(&empty);
 	pthread_mutex_unlock(&lock);
 	for(int i = 0; i<sv->nr_threads; i++){
 		pthread_join(sv->wq[i],NULL);
 		//free(sv->wq[i]);
 	}
-	
-	/*for(int i = 0; i<sv->nr_threads; i++){
+
+	for(int i = 0; i<sv->nr_threads; i++){
 		
 		free(sv->wq[i]);
 		sv->wq[i]=NULL;
-	}*/
+	}
 
 	//call pthread join for every thread each individual thread 
 	//*/
