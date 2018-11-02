@@ -256,11 +256,11 @@ server_exit(struct server *sv)
 		//free(sv->wq[i]);
 	}
 
-	for(int i = 0; i<sv->nr_threads; i++){
+	/*for(int i = 0; i<sv->nr_threads; i++){
 		
 		free(sv->wq[i]);
 		sv->wq[i]=NULL;
-	}
+	}*/
 
 	//call pthread join for every thread each individual thread 
 	//*/
