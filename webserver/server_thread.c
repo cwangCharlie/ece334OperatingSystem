@@ -79,18 +79,18 @@ out:
 /* entry point functions */
 
 
-/*void start_thread(struct server *sv){
+/*static void* start_thread(struct server *sv){
 	
 	while(1){
 		//printf("wtfe\n");
 		pthread_mutex_lock(&lock);
 		while(rq_end==rq_start){
+			pthread_cond_wait(&empty,&lock);
 			if(sv->exiting){
 				pthread_mutex_unlock(&lock);
-				pthread_exit(0);
-				//return;
+				return NULL;
 			}
-			pthread_cond_wait(&empty,&lock);
+			
 		};	
 		int connfn = sv->rq[rq_end];
 		if((rq_start-rq_end+sv->bufferSize)%sv->bufferSize==sv->bufferSize-1){
@@ -104,7 +104,7 @@ out:
 
 }*/
 
-void start_thread(struct server *sv){
+static void* start_thread(struct server *sv){
 	
 	while(1){
 		//printf("wtfe\n");
@@ -113,7 +113,7 @@ void start_thread(struct server *sv){
 			pthread_cond_wait(&empty,&lock);
 			if(sv->exiting){
 				pthread_mutex_unlock(&lock);
-				return;
+				return NULL;
 				
 			}
 		};
@@ -156,7 +156,7 @@ server_init(int nr_threads, int max_requests, int max_cache_size)
 		sv->rq = NULL;
 	}
 	/* Lab 5: init server cache and limit its size to max_cache_size */
-
+	pthread_mutex_lock(&lock);
 	/* Lab 4: create worker threads when nr_threads > 0 */
 	if(nr_threads>0){
 		sv->wq = (pthread_t*)malloc(sizeof(pthread_t)*nr_threads);
@@ -168,6 +168,7 @@ server_init(int nr_threads, int max_requests, int max_cache_size)
 	}else if(nr_threads==0){
 		sv->wq = NULL;
 	}
+	pthread_mutex_unlock(&lock);
 
 	return sv;
 }
@@ -185,12 +186,11 @@ server_request(struct server *sv, int connfd)
 			//printf("wtf\n");
 			pthread_mutex_lock(&lock);
 			while((rq_start-rq_end+sv->bufferSize)%(sv->bufferSize)==(sv->bufferSize)-1){
+				pthread_cond_wait(&full,&lock);
 				if(sv->exiting){
 					pthread_mutex_unlock(&lock);
-					pthread_exit(0);
-					//return;
+					return;
 				}
-				pthread_cond_wait(&full,&lock);
 			};	
 			sv->rq[rq_start] = connfd;
 			if(rq_end==rq_start){
@@ -271,9 +271,9 @@ server_exit(struct server *sv)
 	//if(sv->rq !=NULL)
 		free(sv->rq);
 		//sv->rq = NULL;
-	pthread_mutex_destroy(&lock);
-	pthread_cond_destroy(&full);
-	pthread_cond_destroy(&empty);
+	//pthread_mutex_destroy(&lock);
+	//pthread_cond_destroy(&full);
+	//pthread_cond_destroy(&empty);
 	free(sv);
 	//pthread_exit(0);
 }
