@@ -124,7 +124,6 @@ wc_init(char *word_array, long size)
 
 		//keep track of the total character
 	
-
 		dummy = (char*)malloc(sizeof(char)*(counter+1));
 
 
