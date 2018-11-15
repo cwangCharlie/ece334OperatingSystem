@@ -130,13 +130,13 @@ do_server_request(struct server *sv, int connfd)
 			check = cache_lookup(sv,data);
 			if(check==NULL){
 				
-				/*if(data->file_size > CASHE_MEAN){
+				if(data->file_size > sv->max_cache_size){
 					//the file size is too big, do not perform insertion 
 					pthread_mutex_unlock(&lock);
 					request_sendfile(rq);
 					goto out_0;
 
-				}else*/ if(sv->currentSize+data->file_size <= sv->max_cache_size){
+				}else if(sv->currentSize+data->file_size <= sv->max_cache_size){
 					//has space to insert
 					sv->currentSize += data->file_size;
 					check = cache_insert(data,sv);
