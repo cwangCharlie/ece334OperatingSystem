@@ -180,14 +180,14 @@ do_server_request(struct server *sv, int connfd)
 
 		request_sendfile(rq);
 	out:
-		pthread_mutex_lock(&lock);
+		
 		if (check != NULL)
 		{
-			
+			pthread_mutex_lock(&lock);
 			check->refCount--;	
-			
+			pthread_mutex_unlock(&lock);
 		}
-		pthread_mutex_unlock(&lock);
+		
 		
 		request_destroy(rq);
 		if(data ==NULL)
