@@ -216,7 +216,7 @@ struct wordsElement* cache_insert(struct file_data* data, struct server* sv){
 	
 	// this entire session is critical session
 	struct wordsElement *newELement = initNodewE(data->file_name,data,data->file_size);
-	int hashKey = hash(data->file_name)%sv->hashtableSize;
+	int hashKey = hash(data->file_name)%sv->max_cache_size;
 	newELement->key = hashKey;
 	//assume that it doesn't exist
 	if(sv->ht[hashKey]==NULL){
@@ -242,7 +242,7 @@ struct wordsElement* cache_insert(struct file_data* data, struct server* sv){
 struct wordsElement* cache_lookup(struct server* sv, struct file_data* data){
 
 	char* key = data->file_name;
-	int hashKey = hash(key)%sv->hashtableSize;
+	int hashKey = hash(key)%sv->max_cache_size;
 	struct wordsElement* iter= sv->ht[hashKey];
 	if(iter==NULL){
 		return NULL;
@@ -383,9 +383,9 @@ server_init(int nr_threads, int max_requests, int max_cache_size)
 	/* Lab 5: init server cache and limit its size to max_cache_size */
 	
 	if(max_cache_size>0){
-		sv->ht = malloc(sizeof(struct wordsElement)* sv->hashtableSize);
+		sv->ht = malloc(sizeof(struct wordsElement)* sv->max_cache_size);
 		sv->lq = malloc(sizeof(struct LRU));
-		for (int i = 0; i < sv->hashtableSize; ++i)
+		for (int i = 0; i < sv->max_cache_size; ++i)
 		{
 			sv->ht[i] = NULL;
 		}
