@@ -27,26 +27,29 @@ usage()
 /* the directory in which to create the files */
 #define DEFAULT_DIR fileset_dir
 
-static int mean_file_sz = DEFAULT_MEAN_FILE_SZ;
-static int nr_files = DEFAULT_NR_FILES;
+static int default_file_sz = DEFAULT_MEAN_FILE_SZ;
+static int default_nr_files = DEFAULT_NR_FILES;
 static char *dir = STR(DEFAULT_DIR);
 
 int
 main(int argc, const char *argv[])
 {
 	char c;
-	int i;
+	int nr_files = 0;
 	DIR *d;
 	char filename[1024];
-	double total_file_sz = 0;
+	int current_fileset_sz = 0;
+	int total_fileset_sz;
 	int fd_idx;
-	char buf_idx[4096];
+	char idx_buf[4096];
+	char idx_buffer[4096 * 256]; // a large buffer
+	int cur_size = 0;
 
 	struct poptOption options_table[] = {
-		{NULL, 'm', POPT_ARG_INT, &mean_file_sz, 'm',
+		{NULL, 'm', POPT_ARG_INT, &default_file_sz, 'm',
 		 "mean file size",
 		 " default: " STR(DEFAULT_MEAN_FILE_SZ)},
-		{NULL, 'n', POPT_ARG_INT, &nr_files, 'n',
+		{NULL, 'n', POPT_ARG_INT, &default_nr_files, 'n',
 		 "number of files",
 		 " default: " STR(DEFAULT_NR_FILES)},
 		{NULL, 'd', POPT_ARG_STRING, &dir, 'd',
@@ -63,11 +66,11 @@ main(int argc, const char *argv[])
 			poptStrerror(c));
 		exit(1);
 	}
-	if (mean_file_sz <= 1) {
+	if (default_file_sz <= 1) {
 		fprintf(stderr, "mean file size is too small\n");
 		usage();
 	}
-	if (nr_files < 1 || nr_files > 99999) {
+	if (default_nr_files < 1 || default_nr_files > 99999) {
 		fprintf(stderr, "nr of files is out of bounds\n");
 		usage();
 	}
@@ -85,28 +88,24 @@ main(int argc, const char *argv[])
 			exit(1);
 		}
 	}
-	init_random();
-	strcpy(filename, dir);
-	strcat(filename, ".idx");
-	SYS(fd_idx = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644));
-
-	/* write the number of files in the index file */
-	sprintf(buf_idx, "%d\n", nr_files);
-	Rio_write(fd_idx, buf_idx, strlen(buf_idx));
-
-	for (i = 0; i < nr_files; i++) {
+	// init_random();
+	srandom(100);
+	total_fileset_sz = default_file_sz * 4096 * default_nr_files;
+	/* null terminate the buffer */
+	idx_buffer[0] = 0;
+	while (current_fileset_sz < total_fileset_sz) {
 		char name[10];
 		int fd, file_sz, remaining;
 		char buf[4096];
-		double ms = mean_file_sz;
+		double ms = default_file_sz;
 		unsigned int csum = 0;
 		int j;
 
 		strcpy(filename, dir);
-		sprintf(name, "/%05d", i);
+		sprintf(name, "/%05d", nr_files++);
 		strcat(filename, name);
 		file_sz = rand_pareto(4096, ms/(ms - 1));
-		total_file_sz += file_sz;
+		current_fileset_sz += file_sz;
 		SYS(fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644));
 		remaining = file_sz;
 		while (remaining > 0) {
@@ -122,12 +121,29 @@ main(int argc, const char *argv[])
 		SYS(close(fd));
 		printf("filename = %s, csum = %u, len = %d\n", filename, csum,
 		       file_sz);
-		sprintf(buf_idx, "%s %u %d\n", filename, csum, file_sz);
-		Rio_write(fd_idx, buf_idx, strlen(buf_idx));
+		sprintf(idx_buf, "%s %u %d\n", filename, csum, file_sz);
+		cur_size += strlen(idx_buf);
+		/* avoid buffer overflow */
+		assert(cur_size < (4096 * 256 - 1));
+		strcat(idx_buffer, idx_buf);
 	}
 
+	strcpy(filename, dir);
+	strcat(filename, ".idx");
+	SYS(fd_idx = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644));
+
+	/* write the number of files in the index file */
+	sprintf(idx_buf, "%d\n", nr_files);
+	Rio_write(fd_idx, idx_buf, strlen(idx_buf));
+
+	/* write the rest of the buffer */
+	Rio_write(fd_idx, idx_buffer, strlen(idx_buffer));
 	SYS(close(fd_idx));
-	printf("mean file size = %d, expected mean file size = %d\n",
-	       (int)(total_file_sz / nr_files), mean_file_sz * 4096);
+	
+	printf("file set size = %d, nr files = %d\n"
+	       "mean file size = %d, expected mean file size = %d\n",
+	       current_fileset_sz, nr_files,
+	       (int)((double)current_fileset_sz / nr_files),
+	       default_file_sz * 4096);
 	exit(0);
 }

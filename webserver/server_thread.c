@@ -130,13 +130,13 @@ do_server_request(struct server *sv, int connfd)
 			check = cache_lookup(sv,data);
 			if(check==NULL){
 				
-				if(data->file_size > sv->max_cache_size){
+				/*if(data->file_size > sv->max_cache_size){
 					//the file size is too big, do not perform insertion 
 					pthread_mutex_unlock(&lock);
 					request_sendfile(rq);
 					goto out_0;
 
-				}else if(sv->currentSize+data->file_size <= sv->max_cache_size){
+				}else */if(sv->currentSize+data->file_size <= sv->max_cache_size){
 					//has space to insert
 					sv->currentSize += data->file_size;
 					check = cache_insert(data,sv);
@@ -147,9 +147,7 @@ do_server_request(struct server *sv, int connfd)
 					//printf("full\n");
 					//evict and create space first and then perfoms insertion
 					int amountE = sv->max_cache_size - sv->currentSize;
-					if(amountE<0){
-						printf("wtf\n");
-					}
+					
 					amountE = data->file_size-amountE;
 					struct LRUNode *check1 = cache_evict(amountE,sv);
 					if(check1 == NULL){
@@ -366,7 +364,7 @@ server_init(int nr_threads, int max_requests, int max_cache_size)
 	sv->nr_threads = nr_threads;
 	sv->max_requests = max_requests;
 	sv->max_cache_size = max_cache_size;
-	sv->hashtableSize = (int)max_cache_size/CASHE_MEAN;
+	//sv->hashtableSize = (int)max_cache_size/CASHE_MEAN;
 	sv->exiting = 0;
 	sv->bufferSize = max_requests+1;
 	sv->currentSize=0;
