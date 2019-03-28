@@ -1,0 +1,41 @@
+cc -MM *.c > .depend
+cc -g -Wall -Werror   -c -o server.o server.c
+cc -g -Wall -Werror   -c -o server_thread.o server_thread.c
+cc -g -Wall -Werror   -c -o request.o request.c
+cc -g -Wall -Werror   -c -o common.o common.c
+cc   server.o server_thread.o request.o common.o -lm -lpthread -lpopt  -o server
+cc -g -Wall -Werror   -c -o client_simple.o client_simple.c
+cc   client_simple.o common.o -lm -lpthread -lpopt  -o client_simple
+cc -g -Wall -Werror   -c -o client.o client.c
+cc   client.o common.o -lm -lpthread -lpopt  -o client
+cc -g -Wall -Werror   -c -o fileset.o fileset.c
+cc   fileset.o common.o -lm -lpthread -lpopt  -o fileset
+Running: /cad2/ece344f/tester/scripts/lab5-01-webserver.py 
+webserver test
+starting server at port 39864
+Traceback (most recent call last):
+  File "/cad2/ece344f/tester/scripts/lab5-01-webserver.py", line 134, in <module>
+    main()
+  File "/cad2/ece344f/tester/scripts/lab5-01-webserver.py", line 122, in main
+    test.look("Cachesize experiment done.\r\n")
+  File "/nfs/ug/cad/cad2/ece344f/tester/scripts/tester.py", line 141, in look
+    return self.look_internal(Core._look, result, mark)
+  File "/nfs/ug/cad/cad2/ece344f/tester/scripts/tester.py", line 109, in look_internal
+    index = func(self, result)
+  File "/nfs/ug/cad/cad2/ece344f/tester/scripts/tester.py", line 135, in _look
+    index = self.program.expect(result)
+  File "/usr/lib/python2.7/dist-packages/pexpect/spawnbase.py", line 321, in expect
+    timeout, searchwindowsize, async)
+  File "/usr/lib/python2.7/dist-packages/pexpect/spawnbase.py", line 345, in expect_list
+    return exp.expect_loop(timeout)
+  File "/usr/lib/python2.7/dist-packages/pexpect/expect.py", line 99, in expect_loop
+    incoming = spawn.read_nonblocking(spawn.maxread, timeout)
+  File "/usr/lib/python2.7/dist-packages/pexpect/pty_spawn.py", line 452, in read_nonblocking
+    r, w, e = select_ignore_interrupts([self.child_fd], [], [], timeout)
+  File "/usr/lib/python2.7/dist-packages/pexpect/utils.py", line 138, in select_ignore_interrupts
+    return select.select(iwtd, owtd, ewtd, timeout)
+KeyboardInterrupt
+Mark for webserver test is 0 out of 14
+FAIL
+
+You have received 0 marks out of a total of 14 marks.
